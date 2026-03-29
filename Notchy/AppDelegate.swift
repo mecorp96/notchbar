@@ -5,6 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: TerminalPanel!
     private var notchWindow: NotchWindow?
     private let sessionStore = SessionStore.shared
+    private let settings = SettingsManager.shared
     private var hoverHideTimer: Timer?
     private var hoverGlobalMonitor: Any?
     private var hoverLocalMonitor: Any?
@@ -14,20 +15,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let hoverMargin: CGFloat = 15
     private let hoverHideDelay: TimeInterval = 0.06
 
-    private var replaceNotch: Bool {
-        get {
-            if UserDefaults.standard.object(forKey: "replaceNotch") == nil { return true }
-            return UserDefaults.standard.bool(forKey: "replaceNotch")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "replaceNotch")
-        }
-    }
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         setupPanel()
-        if replaceNotch {
+        if settings.showNotch {
             setupNotchWindow()
         }
         setupHotkey()
@@ -197,17 +188,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showContextMenu() {
         let menu = NSMenu()
 
-        let notchItem = NSMenuItem(
-            title: "Show in notch...",
-            action: #selector(toggleReplaceNotch),
-            keyEquivalent: ""
-        )
-        notchItem.target = self
-        notchItem.state = replaceNotch ? .on : .off
-        menu.addItem(notchItem)
-
-        menu.addItem(.separator())
-
         if !sessionStore.sessions.isEmpty {
             for session in sessionStore.sessions {
                 let item = NSMenuItem(
@@ -229,63 +209,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         newItem.target = self
         menu.addItem(newItem)
+
         menu.addItem(.separator())
 
-        // Checkpoint section
-//        let eligibleSessions = sessionStore.checkpointEligibleSessions
-//        if !eligibleSessions.isEmpty {
-//            menu.addItem(.separator())
-//
-//            let headingItem = NSMenuItem(title: "Checkpoint", action: nil, keyEquivalent: "")
-//            headingItem.isEnabled = false
-//            menu.addItem(headingItem)
-//
-//            let saveItem = NSMenuItem(
-//                title: "Save...",
-//                action: nil,
-//                keyEquivalent: ""
-//            )
-//            let saveMenu = NSMenu()
-//            for session in eligibleSessions {
-//                let item = NSMenuItem(
-//                    title: session.projectName,
-//                    action: #selector(createCheckpoint(_:)),
-//                    keyEquivalent: ""
-//                )
-//                item.target = self
-//                item.representedObject = session.id
-//                saveMenu.addItem(item)
-//            }
-//            saveItem.submenu = saveMenu
-//            menu.addItem(saveItem)
-//
-//            let restoreItem = NSMenuItem(
-//                title: "Restore from…",
-//                action: nil,
-//                keyEquivalent: ""
-//            )
-//            let restoreMenu = NSMenu()
-//            for session in eligibleSessions {
-//                guard let dir = session.projectPath else { continue }
-//                let projectDir = (dir as NSString).deletingLastPathComponent
-//                let hasCheckpoint = !CheckpointManager.shared.checkpoints(for: session.projectName, in: projectDir).isEmpty
-//                guard hasCheckpoint else { continue }
-//                let item = NSMenuItem(
-//                    title: session.projectName,
-//                    action: #selector(restoreLastCheckpoint(_:)),
-//                    keyEquivalent: ""
-//                )
-//                item.target = self
-//                item.representedObject = session.id
-//                restoreMenu.addItem(item)
-//            }
-//            if restoreMenu.items.count > 0 {
-//                restoreItem.submenu = restoreMenu
-//                menu.addItem(restoreItem)
-//            }
-//        }
+        let settingsItem = NSMenuItem(
+            title: "Settings\u{2026}",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
-//        menu.addItem(.separator())
+        menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
             title: "Quit Notchy",
@@ -319,13 +254,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sessionStore.restoreCheckpoint(latest, for: sessionId)
     }
 
-    @objc private func toggleReplaceNotch() {
-        replaceNotch = !replaceNotch
-        if replaceNotch {
-            setupNotchWindow()
-        } else {
-            notchWindow?.orderOut(nil)
-            notchWindow = nil
+    @objc private func openSettings() {
+        SettingsWindowController.shared.show { [weak self] showNotch in
+            guard let self else { return }
+            if showNotch {
+                if self.notchWindow == nil { self.setupNotchWindow() }
+            } else {
+                self.notchWindow?.orderOut(nil)
+                self.notchWindow = nil
+            }
         }
     }
 

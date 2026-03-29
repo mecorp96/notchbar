@@ -218,9 +218,9 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             execName: "-" + (shell as NSString).lastPathComponent
         )
 
-        // cd to working directory, launch claude only if CLAUDE.md exists
+        // cd to working directory, launch claude only if CLAUDE.md exists and integration is enabled
         let escapedDir = shellEscape(workingDirectory)
-        let hasClaude = launchClaude && FileManager.default.fileExists(atPath: (workingDirectory as NSString).appendingPathComponent("CLAUDE.md"))
+        let hasClaude = launchClaude && SettingsManager.shared.claudeIntegrationEnabled && FileManager.default.fileExists(atPath: (workingDirectory as NSString).appendingPathComponent("CLAUDE.md"))
         if hasClaude {
             terminal.send(txt: "cd \(escapedDir) && clear && claude\r")
         } else {

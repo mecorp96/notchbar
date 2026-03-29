@@ -140,6 +140,7 @@ class SessionStore {
     /// Scans for all open Xcode projects — adds new ones, updates active set.
     /// Runs AppleScript on a background thread to avoid blocking UI.
     func detectAllXcodeProjectsAsync() {
+        guard SettingsManager.shared.xcodeIntegrationEnabled else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let projects = XcodeDetector.shared.detectAllProjects()
             DispatchQueue.main.async {
@@ -150,6 +151,7 @@ class SessionStore {
 
     /// Detect projects + auto-switch to frontmost, all async
     func detectAndSwitchAsync() {
+        guard SettingsManager.shared.xcodeIntegrationEnabled else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             let allProjects = XcodeDetector.shared.detectAllProjects()
             let frontProject = XcodeDetector.shared.detectFrontmostProject()
@@ -308,6 +310,7 @@ class SessionStore {
     }
 
     private func playSound(named name: String) {
+        guard SettingsManager.shared.soundsEnabled else { return }
         let now = Date()
         guard now.timeIntervalSince(lastSoundPlayedAt) >= 1.0 else { return }
         guard let url = Bundle.main.url(forResource: name, withExtension: "mp3") else { return }
