@@ -4,6 +4,8 @@ A macOS app that transforms your MacBook's notch into a powerful command center.
 
 > Fork of [adamlyttleapps/notchy](https://github.com/adamlyttleapps/notchy) with additional features and improvements.
 
+![Notchbar demo](images/demo.gif)
+
 ![Notchbar panel](images/Screenshot%202026-03-30%20at%2013.35.29.png)
 
 ## Features
