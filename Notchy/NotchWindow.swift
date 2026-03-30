@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// An invisible window that sits behind the notch area.
 /// When the mouse hovers over the notch or any additional hover rect, it fires a callback to show the main panel.
@@ -9,6 +10,7 @@ class NotchWindow: NSPanel {
     private var localMouseMonitor: Any?
     private var screenObserver: Any?
     private var statusObserver: Any?
+    private var expansionPollTimer: Timer?
     var onHover: (() -> Void)?
     /// Additional rects (in screen coordinates) that should also trigger hover.
     /// Each closure is called at check-time so the rect stays up-to-date.
@@ -23,6 +25,30 @@ class NotchWindow: NSPanel {
 
     /// Whether the notch is currently expanded (wider, for working state)
     private var isExpanded = false
+
+    /// Computed effective width based on active states (Claude + music + system monitor)
+    private var effectiveExpandedWidth: CGFloat {
+        let claudeActive = NotchDisplayState.current != .idle
+        let musicActive = NowPlayingManager.shared.hasNowPlayingInfo
+        var width: CGFloat = notchWidth
+
+        // Right wing: system monitor only when music or claude active
+        if musicActive || claudeActive { width += 120 }
+
+        // Left wing: music info
+        if musicActive { width += 130 }
+
+        // Right wing additions
+        if claudeActive { width += 80 }
+        if musicActive { width += 100 } // music controls on right
+
+        return width
+    }
+
+    /// Width when hovering over the collapsed notch (shows system monitor)
+    private var hoverCollapsedWidth: CGFloat {
+        notchWidth + 120
+    }
 
     /// Debounce timer for collapsing — prevents rapid expand/collapse cycling
     /// when terminal status flickers between .working and .idle.
@@ -68,7 +94,7 @@ class NotchWindow: NSPanel {
             cv.layer?.masksToBounds = false
 
             // SwiftUI content overlay inside the pill
-            let hostView = NSHostingView(rootView: NotchPillContent())
+            let hostView = NSHostingView(rootView: NotchPillContent(notchWidth: notchWidth))
             hostView.frame = cv.bounds
             hostView.autoresizingMask = [.width, .height]
             hostView.alphaValue = 1
@@ -93,19 +119,25 @@ class NotchWindow: NSPanel {
 
     func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         onHover?()
-        return .generic
+        return .copy
     }
 
     func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        return .generic
+        return .copy
     }
 
     func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        // We don't actually accept the drop — just trigger the hover
-        return false
+        guard let items = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !items.isEmpty else { return false }
+
+        FileShelfManager.shared.addFiles(items)
+        return true
     }
 
     deinit {
+        expansionPollTimer?.invalidate()
         if let monitor = mouseMonitor {
             NSEvent.removeMonitor(monitor)
         }
@@ -141,18 +173,25 @@ class NotchWindow: NSPanel {
             }
         }
         // Also poll on a timer to catch status changes from the observation timer
-        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        expansionPollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             self?.updateExpansionState()
         }
     }
 
     private func updateExpansionState() {
-        let shouldExpand = NotchDisplayState.current != .idle
+        let claudeActive = NotchDisplayState.current != .idle
+        let musicActive = NowPlayingManager.shared.hasNowPlayingInfo
+        let shouldExpand = claudeActive || musicActive
 
         if shouldExpand && !isExpanded {
             collapseDebounceTimer?.invalidate()
             collapseDebounceTimer = nil
             expandWithBounce()
+        } else if shouldExpand && isExpanded {
+            // Still expanded — cancel any pending collapse and resize if needed
+            collapseDebounceTimer?.invalidate()
+            collapseDebounceTimer = nil
+            resizeIfNeeded()
         } else if !shouldExpand && isExpanded {
             // Debounce collapse to avoid rapid cycling when terminal status
             // flickers between .working and .idle during transitions.
@@ -160,15 +199,30 @@ class NotchWindow: NSPanel {
             collapseDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.collapseDebounceTimer = nil
-                // Re-check — state may have changed during the debounce
-                if NotchDisplayState.current == .idle && self.isExpanded {
+                let still = NotchDisplayState.current != .idle || NowPlayingManager.shared.hasNowPlayingInfo
+                if !still && self.isExpanded {
                     self.collapse()
                 }
             }
-        } else if shouldExpand && isExpanded {
-            // Still expanded and should be — cancel any pending collapse
-            collapseDebounceTimer?.invalidate()
-            collapseDebounceTimer = nil
+        }
+    }
+
+    /// Smoothly resize the pill if the effective width changed while already expanded
+    private func resizeIfNeeded() {
+        guard isExpanded, let screen = NSScreen.builtIn else { return }
+        let targetWidth = effectiveExpandedWidth
+        let screenFrame = screen.frame
+        var targetFrame = NSRect(
+            x: screenFrame.midX - targetWidth / 2,
+            y: screenFrame.maxY - notchHeight,
+            width: targetWidth,
+            height: notchHeight
+        )
+        if isHovered { targetFrame = applyHoverGrow(to: targetFrame) }
+        guard abs(frame.width - targetFrame.width) > 2 else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.3
+            self.animator().setFrame(targetFrame, display: true)
         }
     }
 
@@ -177,7 +231,7 @@ class NotchWindow: NSPanel {
         guard let screen = NSScreen.builtIn else { return }
         let screenFrame = screen.frame
 
-        let targetWidth: CGFloat = notchWidth + 80
+        let targetWidth: CGFloat = effectiveExpandedWidth
         var targetFrame = NSRect(
             x: screenFrame.midX - targetWidth / 2,
             y: screenFrame.maxY - notchHeight,
@@ -327,7 +381,7 @@ class NotchWindow: NSPanel {
         // Check the notch area itself
         guard let screen = NSScreen.builtIn else { return }
         let screenFrame = screen.frame
-        let effectiveWidth = isExpanded ? notchWidth + 80 : notchWidth
+        let effectiveWidth = isExpanded ? effectiveExpandedWidth : notchWidth
         let notchRect = NSRect(
             x: screenFrame.midX - effectiveWidth / 2,
             y: screenFrame.maxY - notchHeight,
@@ -383,8 +437,19 @@ class NotchWindow: NSPanel {
         // Start ears at zero protrusion, then animate outward
         pillView.earProtrusion = 0
         pillView.isHovered = true
-        pillContentHost?.rootView = NotchPillContent(isHovering: true)
-        setFrame(applyHoverGrow(to: frame), display: true)
+        pillContentHost?.rootView = NotchPillContent(isHovering: true, notchWidth: notchWidth)
+
+        guard let screen = NSScreen.builtIn else { return }
+        let screenFrame = screen.frame
+        // When collapsed, expand to show system monitor on hover
+        let baseWidth = isExpanded ? effectiveExpandedWidth : hoverCollapsedWidth
+        let baseFrame = NSRect(
+            x: screenFrame.midX - baseWidth / 2,
+            y: screenFrame.maxY - notchHeight,
+            width: baseWidth,
+            height: notchHeight
+        )
+        setFrame(applyHoverGrow(to: baseFrame), display: true)
 
         // Animate ears growing outward from body edges
         let targetProtrusion = NotchPillView.earRadius
@@ -406,10 +471,10 @@ class NotchWindow: NSPanel {
     private func hoverShrink() {
         pillView.isHovered = false
         pillView.earProtrusion = 0
-        pillContentHost?.rootView = NotchPillContent(isHovering: false)
+        pillContentHost?.rootView = NotchPillContent(isHovering: false, notchWidth: notchWidth)
         guard let screen = NSScreen.builtIn else { return }
         let screenFrame = screen.frame
-        let baseWidth = isExpanded ? notchWidth + 80 : notchWidth
+        let baseWidth = isExpanded ? effectiveExpandedWidth : notchWidth
         let targetFrame = NSRect(
             x: screenFrame.midX - baseWidth / 2,
             y: screenFrame.maxY - notchHeight,
@@ -579,61 +644,132 @@ enum NotchDisplayState: Equatable {
 
 struct NotchPillContent: View {
     var isHovering: Bool = false
+    var notchWidth: CGFloat = 180
     private var displayState: NotchDisplayState { .current }
+    private var nowPlaying: NowPlayingManager { .shared }
+
+    // Staggered entrance animation
+    @State private var showLeftWing = false
+    @State private var showRightWing = false
+    @State private var appeared = false
 
     var body: some View {
-        ZStack {
-            HStack {
+        HStack(spacing: 0) {
+            // LEFT WING: Track info (equalizer + title + artist)
+            if nowPlaying.hasNowPlayingInfo {
+                NowPlayingInfoView()
+                    .padding(.trailing, 4)
+                    .frame(maxWidth: .infinity)
+                    .scaleEffect(showLeftWing ? 1 : 0.7)
+                    .opacity(showLeftWing ? 1 : 0)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.8).combined(with: .opacity),
+                        removal: .scale(scale: 0.9).combined(with: .opacity)
+                    ))
+            }
 
+            // CENTER: physical notch camera gap
+            Color.clear.frame(width: notchWidth)
+
+            // RIGHT WING: music controls + Claude status + system monitor
+            HStack(spacing: 10) {
+                // Music transport controls
+                if nowPlaying.hasNowPlayingInfo {
+                    NowPlayingControlsView(isHovering: isHovering)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+
+                // Claude status
                 if displayState != .idle {
-
-                    Rectangle()
-                        .foregroundColor(.clear)
-                        .frame(width: 18, height: 18)
-                        .overlay(alignment: .leading) {
-                            BotFaceView() //state: displayState
-                                .frame(width: 20, height: 15)
-                                .mask(RoundedRectangle(cornerRadius: 5))
-                        }
-//                        .offset(x: 2)
-//                        .padding(.leading, -2)
-
-
-                    Spacer()
-
-                    switch displayState {
-                    case .taskCompleted:
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.green)
-                            .transition(.scale.combined(with: .opacity))
-                    case .waitingForInput:
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.yellow)
-                            .transition(.scale.combined(with: .opacity))
-                    case .working:
-                        SpinnerView()
-                            .frame(width: 14, height: 14)
-                            .transition(.scale.combined(with: .opacity))
-                    case .idle:
-                        EmptyView()
+                    if nowPlaying.hasNowPlayingInfo {
+                        pillSeparator
                     }
+                    claudeStatusView
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+
+                // System monitor (visible on hover or when music/claude active)
+                if isHovering || nowPlaying.hasNowPlayingInfo || displayState != .idle {
+                    if nowPlaying.hasNowPlayingInfo || displayState != .idle {
+                        pillSeparator
+                    }
+                    SystemMonitorView(isHovering: isHovering)
+                        .scaleEffect(showRightWing ? 1 : 0.5)
+                        .opacity(showRightWing ? 1 : 0)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: displayState)
-            .padding(.horizontal, 12 + (isHovering ? NotchPillView.earRadius : 0))
-
-            // Debug: show current displayState
-//            Text("\(String(describing: displayState))")
-//                .font(.system(size: 10, weight: .medium, design: .monospaced))
-//                .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.75), value: displayState)
+        .animation(.spring(response: 0.4, dampingFraction: 0.75), value: nowPlaying.hasNowPlayingInfo)
+        .padding(.horizontal, 14 + (isHovering ? NotchPillView.earRadius : 0))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            var urls: [URL] = []
+            let group = DispatchGroup()
+            for provider in providers {
+                group.enter()
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url { urls.append(url) }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) {
+                guard !urls.isEmpty else { return }
+                FileShelfManager.shared.addFiles(urls)
+            }
+            return true
+        }
         .offset(y: isHovering ? -3 : -2)
         .onChange(of: displayState) {
             NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+        }
+        .onAppear {
+            guard !appeared else { return }
+            appeared = true
+            // Stagger: right wing first (system monitor), then left (music)
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.3)) {
+                showRightWing = true
+            }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.5)) {
+                showLeftWing = true
+            }
+        }
+    }
+
+    private var pillSeparator: some View {
+        Capsule()
+            .fill(.white.opacity(0.12))
+            .frame(width: 1, height: 14)
+    }
+
+    @ViewBuilder
+    private var claudeStatusView: some View {
+        HStack(spacing: 6) {
+            BotFaceView()
+                .frame(width: 18, height: 13)
+                .mask(RoundedRectangle(cornerRadius: 4))
+
+            switch displayState {
+            case .taskCompleted:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .transition(.scale.combined(with: .opacity))
+            case .waitingForInput:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.yellow)
+                    .transition(.scale.combined(with: .opacity))
+            case .working:
+                SpinnerView()
+                    .frame(width: 12, height: 12)
+                    .transition(.scale.combined(with: .opacity))
+            case .idle:
+                EmptyView()
+            }
         }
     }
 }

@@ -264,6 +264,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
+        env.removeValue(forKey: "CLAUDECODE")
         return env.map { "\($0.key)=\($0.value)" }
     }
 

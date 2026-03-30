@@ -1,21 +1,29 @@
-# Notchy
+# Notchbar
 
-A macOS menu bar app that puts Claude Code right in your MacBook's notch. Hover over the notch or click the menu bar icon to open a floating terminal panel with embedded sessions that automatically detect your open Xcode projects.
+A macOS app that transforms your MacBook's notch into a powerful command center. Hover over the notch to reveal a floating terminal panel with Claude Code, media controls, system monitoring, file shelf, and clipboard history — all in one place.
 
-<!-- Add your screenshot here: ![Notchy](screenshot.png) -->
+> Fork of [adamlyttleapps/notchy](https://github.com/adamlyttleapps/notchy) with additional features and improvements.
+
+![Notchbar panel](images/Screenshot%202026-03-30%20at%2013.35.29.png)
 
 ## Features
 
-- **Notch integration** — hover over the MacBook notch to reveal the terminal panel
-- **Xcode project detection** — automatically discovers open Xcode projects and `cd`s into them
-- **Multi-session tabs** — run multiple Claude Code sessions side by side
-- **Live status in the notch** — animated pill shows whether Claude is working, waiting, or done
+- **Notch integration** — hover over the MacBook notch to reveal the terminal panel, or click the menu bar icon
+- **Claude Code terminal** — embedded terminal sessions that auto-detect open Xcode projects and launch Claude
+- **Now Playing** — YouTube/Safari media controls with scrolling marquee text for long titles
+- **System monitor** — CPU and RAM gauges shown on hover with live percentage values
+- **File Shelf** — drag files onto the notch to store them temporarily; drag them back out wherever you need them
+- **Clipboard history** — keeps track of recent clipboard entries
 - **Git checkpoints** — Cmd+S to snapshot your project before Claude makes changes
+- **Multi-session tabs** — run multiple Claude Code sessions side by side
+- **Auto-launch** — starts automatically when you log in
+
+![Notch with music](images/collapsed%20with%20music.png)
 
 ## Requirements
 
-- macOS 26.0+
-- MacBook with a notch (for notch features; menu bar still works without one)
+- macOS 15.0+ (Sequoia)
+- MacBook with a notch (menu bar still works without one)
 
 ## Building
 
@@ -28,6 +36,17 @@ xcodebuild -project Notchy.xcodeproj -scheme Notchy -configuration Debug build
 ## Dependencies
 
 - [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — terminal emulator view (via Swift Package Manager)
+
+## Changes from upstream
+
+- Removed volume control (system volume slider)
+- Added scrolling marquee text for long track titles
+- System monitor (CPU/RAM) only visible on hover when no media is playing
+- CPU/RAM gauges show percentage values on hover
+- File shelf supports drag-out (not just drag-in)
+- Auto-launch on login via SMAppService
+- Fixed timer memory leaks
+- More compact notch layout
 
 ## License
 

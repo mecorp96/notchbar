@@ -181,6 +181,11 @@ struct PanelContentView: View {
                 .foregroundColor(.white.opacity(0.8))
             }
 
+            // Utility bar: File Shelf + Clipboard History
+            if sessionStore.isTerminalExpanded {
+                UtilityBarView()
+            }
+
             if sessionStore.isTerminalExpanded {
                 Divider()
 
@@ -261,6 +266,7 @@ struct PanelContentView: View {
         }
     }
 
+    // Placeholder kept below
     private func placeholderView(_ message: String) -> some View {
         Color(nsColor: NSColor(white: 0.1, alpha: 1.0))
             .overlay {
@@ -270,5 +276,83 @@ struct PanelContentView: View {
                     .multilineTextAlignment(.center)
                     .opacity(0)
             }
+    }
+}
+
+// MARK: - Utility bar (File Shelf + Clipboard History)
+
+struct UtilityBarView: View {
+    @State private var showFileShelf = false
+    @State private var showClipboard = false
+
+    private var fileCount: Int { FileShelfManager.shared.fileCount }
+    private var clipCount: Int { ClipboardManager.shared.itemCount }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toggle buttons row
+            HStack(spacing: 12) {
+                toggleButton(
+                    icon: "tray.full",
+                    label: "Files",
+                    count: fileCount,
+                    isOn: $showFileShelf
+                )
+                toggleButton(
+                    icon: "doc.on.clipboard",
+                    label: "Clipboard",
+                    count: clipCount,
+                    isOn: $showClipboard
+                )
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(Color(nsColor: NSColor(white: 0.12, alpha: 1.0)))
+
+            // Expandable sections
+            if showFileShelf {
+                FileShelfView()
+                    .background(Color(nsColor: NSColor(white: 0.1, alpha: 1.0)))
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if showClipboard {
+                ClipboardHistoryView()
+                    .background(Color(nsColor: NSColor(white: 0.1, alpha: 1.0)))
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showFileShelf)
+        .animation(.easeInOut(duration: 0.2), value: showClipboard)
+    }
+
+    private func toggleButton(icon: String, label: String, count: Int, isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(.white.opacity(0.15)))
+                }
+            }
+            .foregroundStyle(isOn.wrappedValue ? .white : .white.opacity(0.4))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isOn.wrappedValue ? .white.opacity(0.1) : .clear)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -75,7 +75,7 @@ class TerminalPanel: NSPanel {
             let y = screen.visibleFrame.maxY - panelHeight
             setFrameOrigin(NSPoint(x: x, y: y))
         }
-        makeKeyAndOrderFront(nil)
+        animateIn()
         NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
     }
 
@@ -86,12 +86,56 @@ class TerminalPanel: NSPanel {
         let x = screenFrame.midX - panelWidth / 2
         let y = screenFrame.maxY - panelHeight
         setFrameOrigin(NSPoint(x: x, y: y))
-        makeKeyAndOrderFront(nil)
+        animateIn()
         NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
     }
 
     func hidePanel() {
-        orderOut(nil)
+        animateOut()
+    }
+
+    // MARK: - Slide + fade animations
+
+    private func animateIn() {
+        let targetFrame = frame
+        // Start from slightly above (pushed up into the notch) and transparent
+        let startFrame = NSRect(
+            x: targetFrame.origin.x,
+            y: targetFrame.origin.y + 16,
+            width: targetFrame.width,
+            height: targetFrame.height
+        )
+        setFrame(startFrame, display: false)
+        alphaValue = 0
+        makeKeyAndOrderFront(nil)
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)
+            self.animator().setFrame(targetFrame, display: true)
+            self.animator().alphaValue = 1
+        }
+    }
+
+    private func animateOut() {
+        let startFrame = frame
+        let targetFrame = NSRect(
+            x: startFrame.origin.x,
+            y: startFrame.origin.y + 12,
+            width: startFrame.width,
+            height: startFrame.height
+        )
+
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 1.0, 1.0)
+            self.animator().setFrame(targetFrame, display: true)
+            self.animator().alphaValue = 0
+        }, completionHandler: {
+            self.orderOut(nil)
+            self.alphaValue = 1
+            self.setFrame(startFrame, display: false)
+        })
     }
 
     private func handleToggleExpand() {

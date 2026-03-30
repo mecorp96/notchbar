@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -22,6 +23,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             setupNotchWindow()
         }
         setupHotkey()
+        // Register as login item so it starts on boot
+        try? SMAppService.mainApp.register()
+
+        // Initialize managers
+        _ = NowPlayingManager.shared
+        _ = SystemMonitor.shared
+        _ = ClipboardManager.shared
+        _ = FileShelfManager.shared
         // Detect in background so launch isn't blocked
         sessionStore.detectAllXcodeProjectsAsync()
     }
