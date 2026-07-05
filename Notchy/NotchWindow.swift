@@ -107,9 +107,7 @@ class NotchWindow: NSPanel {
         // Accept file drags so hovering a dragged file over the notch opens the panel
         registerForDraggedTypes([.fileURL, .URL])
 
-        detectNotchSize()
-        positionAtNotch()
-        orderFrontRegardless()
+        updateScreenPresence()
         setupTracking()
         observeScreenChanges()
         observeStatusChanges()
@@ -172,8 +170,9 @@ class NotchWindow: NSPanel {
                 }
             }
         }
-        // Also poll on a timer to catch status changes from the observation timer
-        expansionPollTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        // Slow fallback poll in case a status change slips past the
+        // notification; the observer above is the primary driver.
+        expansionPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.updateExpansionState()
         }
     }
@@ -492,9 +491,22 @@ class NotchWindow: NSPanel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.detectNotchSize()
-            self?.positionAtNotch()
+            self?.updateScreenPresence()
         }
+    }
+
+    /// Shows the pill only while the built-in display is active; when the
+    /// laptop runs in clamshell mode (or on a desktop Mac) there is no notch,
+    /// so the window is hidden entirely.
+    private func updateScreenPresence() {
+        guard NSScreen.builtIn != nil else {
+            orderOut(nil)
+            return
+        }
+        detectNotchSize()
+        positionAtNotch()
+        orderFrontRegardless()
+        updateExpansionState()
     }
 
     override var canBecomeKey: Bool { false }
@@ -504,12 +516,14 @@ class NotchWindow: NSPanel {
 // MARK: - NSScreen helper
 
 extension NSScreen {
-    /// Returns the built-in display (the one with the notch), or the main screen as fallback.
+    /// Returns the built-in display (the one with the notch). Nil when it is
+    /// inactive (clamshell mode with an external monitor) or absent (desktop
+    /// Macs) — there is no notch to anchor to on an external display.
     static var builtIn: NSScreen? {
         screens.first { screen in
             let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
             return CGDisplayIsBuiltin(id) != 0
-        } ?? main
+        }
     }
 }
 
