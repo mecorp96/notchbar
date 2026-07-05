@@ -51,13 +51,25 @@ class CheckpointManager {
         process.standardOutput = outPipe
         process.standardError = errPipe
         try process.run()
+
+        // Drain both pipes before waiting: if git writes more than the pipe
+        // buffer (~64KB) while we block on waitUntilExit, it deadlocks.
+        let errHandle = errPipe.fileHandleForReading
+        var errData = Data()
+        let errDrained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            errData = errHandle.readDataToEndOfFile()
+            errDrained.signal()
+        }
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        errDrained.wait()
         process.waitUntilExit()
 
-        let output = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+        let output = String(data: outData, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         if process.terminationStatus != 0 {
-            let errOutput = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let errOutput = String(data: errData, encoding: .utf8) ?? ""
             throw CheckpointError.gitFailed(errOutput.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 

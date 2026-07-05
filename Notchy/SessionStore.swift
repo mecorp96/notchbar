@@ -262,6 +262,7 @@ class SessionStore {
             let previous = sessions[index].terminalStatus
             sessions[index].terminalStatus = status
             updateSleepPrevention()
+            NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
 
             if status == .working && previous != .working {
                 sessions[index].workingStartedAt = Date()
@@ -280,10 +281,12 @@ class SessionStore {
                 // Delay 3s before treating as "task completed" — Claude sometimes
                 // goes working → idle → working again briefly.
                 let workingStartedAt = sessions[index].workingStartedAt
+                let generation = sessions[index].generation
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(3))
                     guard let idx = self.sessions.firstIndex(where: { $0.id == id }),
-                          self.sessions[idx].terminalStatus == .idle else { return }
+                          self.sessions[idx].terminalStatus == .idle,
+                          self.sessions[idx].generation == generation else { return }
                     // Only trigger taskCompleted for tasks that ran >10s
                     if let started = workingStartedAt, Date().timeIntervalSince(started) < 10 {
                         return

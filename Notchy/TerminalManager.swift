@@ -5,7 +5,6 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     var sessionId: UUID?
     private var keyMonitor: Any?
     private var statusDebounceWork: DispatchWorkItem?
-    private static let statusQueue = DispatchQueue(label: "com.notchy.status", qos: .utility)
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -119,15 +118,16 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
         guard let id = sessionId else { return }
 
-        // Debounce status checks on a background queue to avoid
-        // blocking the main thread with per-cell buffer reads.
+        // Debounce status checks. Buffer reads must stay on the main thread:
+        // SwiftTerm mutates the buffer there, so reading it from another
+        // queue is a data race.
         statusDebounceWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.evaluateStatus(for: id)
         }
         statusDebounceWork = work
-        Self.statusQueue.asyncAfter(deadline: .now() + 0.15, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     private func evaluateStatus(for id: UUID) {
@@ -148,9 +148,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         }
 
         if !SessionStore.shared.sessions.contains(where: {$0.id == id && $0.terminalStatus == newStatus}) {
-            DispatchQueue.main.async {
-                SessionStore.shared.updateTerminalStatus(id, status: newStatus)
-            }
+            SessionStore.shared.updateTerminalStatus(id, status: newStatus)
         }
     }
 

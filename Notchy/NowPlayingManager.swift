@@ -27,6 +27,17 @@ class NowPlayingManager {
     // MARK: - Fetch Now Playing (Safari/YouTube via AppleScript + JS)
 
     private func fetchNowPlayingInfo() {
+        // Cheap check before paying the AppleScript/Apple Events cost every poll
+        guard NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.apple.Safari" }) else {
+            if hasNowPlayingInfo {
+                trackTitle = ""
+                artistName = ""
+                isPlaying = false
+                hasNowPlayingInfo = false
+                NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+            }
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let script = """
             tell application "System Events"

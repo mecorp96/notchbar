@@ -16,6 +16,9 @@ class SystemMonitor {
 
     private var pollTimer: Timer?
     private var previousCPUInfo: host_cpu_load_info?
+    // mach_host_self() adds a send-right reference on every call and would
+    // leak if fetched per poll, so grab it once.
+    private let host = mach_host_self()
 
     private init() {
         memoryTotal = Self.physicalMemoryGB()
@@ -32,7 +35,6 @@ class SystemMonitor {
     private func fetchCPU() {
         var cpuLoad = host_cpu_load_info()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
-        let host = mach_host_self()
 
         let result = withUnsafeMutablePointer(to: &cpuLoad) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
@@ -67,7 +69,6 @@ class SystemMonitor {
     private func fetchMemory() {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
-        let host = mach_host_self()
 
         let result = withUnsafeMutablePointer(to: &stats) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
